@@ -15,6 +15,14 @@ var (
 	ErrBadPath         = errors.New("bad path")
 )
 
+type ErrUnexpectedEvent struct {
+	zk.EventType
+}
+
+func (ue *ErrUnexpectedEvent) Error() string {
+	return fmt.Sprintf("unexpected event %v", ue.EventType)
+}
+
 type CatMan struct {
 	conn *zk.Conn
 }
@@ -35,11 +43,11 @@ func (cm *CatMan) CreateEphemeralSequential(
 	if err != nil {
 		return "", 0, err
 	}
-	seq, err := pathToSeq(path)
+	seq, err := path2Seq(path)
 	return path, seq, err
 }
 
-func pathToSeq(path string) (int64, error) {
+func path2Seq(path string) (int64, error) {
 	idx := strings.LastIndex(path, "-")
 	if idx == -1 {
 		return 0, ErrBadPath
@@ -185,7 +193,7 @@ type candidate struct {
 
 func childrenToCandidate(parent string, children []string) (cs []candidate) {
 	for _, path := range children {
-		seq, err := pathToSeq(path)
+		seq, err := path2Seq(path)
 		if err != nil {
 			continue
 		}
@@ -213,23 +221,6 @@ func findCandidateJ(cs []candidate, self candidate) (*candidate, error) {
 		return nil, nil
 	}
 	return &j, nil
-}
-
-func seqIn(seqs []int64, seq int64) bool {
-	for _, s := range seqs {
-		if s == seq {
-			return true
-		}
-	}
-	return false
-}
-
-type ErrUnexpectedEvent struct {
-	zk.EventType
-}
-
-func (ue *ErrUnexpectedEvent) Error() string {
-	return fmt.Sprintf("unexpected event %v", ue.EventType)
 }
 
 func defaultACL() []zk.ACL {
