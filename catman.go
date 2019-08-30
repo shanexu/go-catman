@@ -31,6 +31,10 @@ func NewCatMan(conn *zk.Conn) *CatMan {
 	return &CatMan{conn}
 }
 
+func (cm *CatMan) Conn() *zk.Conn {
+	return cm.conn
+}
+
 func (cm *CatMan) CreatePath(path string, data []byte) (string, error) {
 	return cm.conn.Create(path, data, 0, defaultACL())
 }
