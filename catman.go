@@ -34,6 +34,15 @@ func (cm *CatMan) Conn() *zk.Conn {
 	return cm.conn
 }
 
+func (cm *CatMan) Get(path string) ([]byte, error) {
+	data, _, err := cm.conn.Get(path)
+	return data, err
+}
+
+func (cm *CatMan) Delete(path string, version int32) error {
+	return cm.conn.Delete(path, version)
+}
+
 func (cm *CatMan) CreatePath(path string, data []byte) (string, error) {
 	return cm.conn.Create(path, data, 0, defaultACL())
 }

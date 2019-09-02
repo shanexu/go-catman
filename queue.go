@@ -1,43 +1,180 @@
 package catman
 
 import (
+	"errors"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/samuel/go-zookeeper/zk"
-	"math"
 )
 
 const prefix = "qn-"
+
+var (
+	ErrNoSuchElement = errors.New("no such element")
+)
 
 type DistributedQueue struct {
 	conn *CatMan
 	dir  string
 }
 
-func (q *DistributedQueue) Element() []byte {
-	return nil
+// Return the head of the queue without modifying the queue.
+func (q *DistributedQueue) Element() ([]byte, error) {
+	for {
+		orderedChildren, err := q.orderedChildren()
+		if err != nil {
+			if err == zk.ErrNoNode {
+				return nil, ErrNoSuchElement
+			}
+			return nil, err
+		}
+		if orderedChildren.Size() == 0 {
+			return nil, ErrNoSuchElement
+		}
+
+		for _, headNode := range orderedChildren.Values() {
+			headNode, _ := headNode.(string)
+			if headNode == "" {
+				continue
+			}
+			data, err := q.conn.Get(q.dir + "/" + headNode)
+			if err != nil {
+				if err == zk.ErrNoNode {
+					//Another client removed the node first, try next
+					continue
+				}
+				return nil, err
+			}
+			return data, nil
+		}
+	}
 }
 
-func (q *DistributedQueue) Remove() []byte {
-	return nil
+// Attempts to remove the head of the queue and return it.
+func (q *DistributedQueue) Remove() ([]byte, error) {
+	for {
+		orderedChildren, err := q.orderedChildren()
+		if err != nil {
+			if err == zk.ErrNoNode {
+				return nil, ErrNoSuchElement
+			}
+			return nil, err
+		}
+		if orderedChildren.Size() == 0 {
+			return nil, ErrNoSuchElement
+		}
+
+		for _, headNode := range orderedChildren.Values() {
+			headNode, _ := headNode.(string)
+			if headNode == "" {
+				continue
+			}
+			path := q.dir + "/" + headNode
+			data, err := q.conn.Get(path)
+			if err != nil {
+				if err == zk.ErrNoNode {
+					//Another client removed the node first, try next
+					continue
+				}
+				return nil, err
+			}
+			err = q.conn.Delete(path, -1)
+			if err != nil {
+				if err == zk.ErrNoNode {
+					//Another client removed the node first, try next
+					continue
+				}
+				return nil, err
+			}
+			return data, nil
+		}
+
+	}
 }
 
-func (q *DistributedQueue) Take() []byte {
-	return nil
+// Removes the head of the queue and returns it, blocks until it succeeds.
+func (q *DistributedQueue) Take() ([]byte, error) {
+	for {
+		orderedChildren, events, err := q.orderedChildrenW()
+		if err != nil {
+			if err == zk.ErrNoNode {
+				if _, err := q.conn.CreatePath(q.dir, nil); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
+		if orderedChildren.Size() == 0 {
+			<-events
+			continue
+		}
+		for _, headNode := range orderedChildren.Values() {
+			headNode, _ := headNode.(string)
+			if headNode == "" {
+				continue
+			}
+			path := q.dir + "/" + headNode
+			data, err := q.conn.Get(path)
+			if err != nil {
+				if err == zk.ErrNoNode {
+					//Another client removed the node first, try next
+					continue
+				}
+				return nil, err
+			}
+			err = q.conn.Delete(path, -1)
+			if err != nil {
+				if err == zk.ErrNoNode {
+					//Another client removed the node first, try next
+					continue
+				}
+				return nil, err
+			}
+			return data, nil
+		}
+	}
 }
 
-func (q *DistributedQueue) Offer() []byte {
-	return nil
+// Inserts data into queue.
+func (q *DistributedQueue) Offer(data []byte) (bool, error) {
+	for {
+		_, err := q.conn.CreateSequential(q.dir+"/"+prefix, data)
+		if err != nil {
+			if err == zk.ErrNoNode {
+				q.conn.CreatePath(q.dir, nil)
+				continue
+			}
+			return false, err
+		}
+		return true, nil
+	}
 }
 
-func (q *DistributedQueue) Peek() []byte {
-	return nil
+// Returns the data at the first element of the queue, or null if the queue is empty.
+func (q *DistributedQueue) Peek() ([]byte, error) {
+	data, err := q.Element()
+	if err != nil {
+		if err == ErrNoSuchElement {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
-func (q *DistributedQueue) Poll() []byte {
-	return nil
+// Attempts to remove the head of the queue and return it. Returns null if the queue is empty.
+func (q *DistributedQueue) Poll() ([]byte, error) {
+	data, err := q.Remove()
+	if err != nil {
+		if err == ErrNoSuchElement {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
 func (q *DistributedQueue) children2Ordered(childNames []string) *treemap.Map {
