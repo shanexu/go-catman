@@ -17,8 +17,8 @@ var (
 )
 
 type DistributedQueue struct {
-	conn *CatMan
-	dir  string
+	cm  *CatMan
+	dir string
 }
 
 // Return the head of the queue without modifying the queue.
@@ -40,7 +40,7 @@ func (q *DistributedQueue) Element() ([]byte, error) {
 			if headNode == "" {
 				continue
 			}
-			data, err := q.conn.Get(q.dir + "/" + headNode)
+			data, err := q.cm.Get(q.dir + "/" + headNode)
 			if err != nil {
 				if err == zk.ErrNoNode {
 					//Another client removed the node first, try next
@@ -73,7 +73,7 @@ func (q *DistributedQueue) Remove() ([]byte, error) {
 				continue
 			}
 			path := q.dir + "/" + headNode
-			data, err := q.conn.Get(path)
+			data, err := q.cm.Get(path)
 			if err != nil {
 				if err == zk.ErrNoNode {
 					//Another client removed the node first, try next
@@ -81,7 +81,7 @@ func (q *DistributedQueue) Remove() ([]byte, error) {
 				}
 				return nil, err
 			}
-			err = q.conn.Delete(path, -1)
+			err = q.cm.Delete(path, -1)
 			if err != nil {
 				if err == zk.ErrNoNode {
 					//Another client removed the node first, try next
@@ -101,7 +101,7 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 		orderedChildren, events, err := q.orderedChildrenW()
 		if err != nil {
 			if err == zk.ErrNoNode {
-				if _, err := q.conn.CreatePath(q.dir, nil); err != nil {
+				if _, err := q.cm.CreatePath(q.dir, nil); err != nil {
 					return nil, err
 				}
 				continue
@@ -117,7 +117,7 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 				continue
 			}
 			path := q.dir + "/" + headNode
-			data, err := q.conn.Get(path)
+			data, err := q.cm.Get(path)
 			if err != nil {
 				if err == zk.ErrNoNode {
 					//Another client removed the node first, try next
@@ -125,7 +125,7 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 				}
 				return nil, err
 			}
-			err = q.conn.Delete(path, -1)
+			err = q.cm.Delete(path, -1)
 			if err != nil {
 				if err == zk.ErrNoNode {
 					//Another client removed the node first, try next
@@ -141,10 +141,10 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 // Inserts data into queue.
 func (q *DistributedQueue) Offer(data []byte) (bool, error) {
 	for {
-		_, err := q.conn.CreateSequential(q.dir+"/"+prefix, data)
+		_, err := q.cm.CreateSequential(q.dir+"/"+prefix, data)
 		if err != nil {
 			if err == zk.ErrNoNode {
-				q.conn.CreatePath(q.dir, nil)
+				q.cm.CreatePath(q.dir, nil)
 				continue
 			}
 			return false, err
@@ -195,7 +195,7 @@ func (q *DistributedQueue) children2Ordered(childNames []string) *treemap.Map {
 }
 
 func (q *DistributedQueue) orderedChildren() (*treemap.Map, error) {
-	childNames, err := q.conn.Children(q.dir)
+	childNames, err := q.cm.Children(q.dir)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func (q *DistributedQueue) orderedChildren() (*treemap.Map, error) {
 }
 
 func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, error) {
-	childNames, events, err := q.conn.ChildrenW(q.dir)
+	childNames, events, err := q.cm.ChildrenW(q.dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,7 +215,7 @@ func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, er
 }
 
 func (q *DistributedQueue) smallestChildName() (string, error) {
-	childNames, err := q.conn.Children(q.dir)
+	childNames, err := q.cm.Children(q.dir)
 	if err != nil {
 		return "", err
 	}
@@ -243,7 +243,7 @@ func (q *DistributedQueue) smallestChildName() (string, error) {
 
 func (cm *CatMan) NewDistributedQueue(dir string) *DistributedQueue {
 	return &DistributedQueue{
-		conn: cm,
-		dir:  dir,
+		cm:  cm,
+		dir: dir,
 	}
 }
