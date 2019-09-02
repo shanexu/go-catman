@@ -38,7 +38,11 @@ func (cm *CatMan) CreatePath(path string, data []byte) (string, error) {
 	return cm.conn.Create(path, data, 0, defaultACL())
 }
 
-func (cm *CatMan) CreateEphemeralSequential(
+func (cm *CatMan) CreateSequential(pathPrefix string, data []byte) (string, error) {
+	return cm.Conn().Create(pathPrefix, data, zk.FlagSequence, defaultACL())
+}
+
+func (cm *CatMan) CreateProtectedEphemeralSequential(
 	path string,
 	data []byte,
 ) (string, int64, error) {
@@ -152,8 +156,17 @@ func (cm *CatMan) Children(parent string) ([]string, error) {
 	return children, err
 }
 
+func (cm *CatMan) ChildrenW(parent string) ([]string, <-chan zk.Event, error) {
+	children, _, events, err := cm.conn.ChildrenW(parent)
+	return children, events, err
+}
+
 func defaultACL() []zk.ACL {
 	const perm = zk.PermAdmin | zk.PermRead | zk.PermWrite | zk.PermCreate |
 		zk.PermDelete
 	return zk.WorldACL(perm)
+}
+
+type Watcher interface {
+	Process(zk.Event)
 }

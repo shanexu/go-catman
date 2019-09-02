@@ -20,7 +20,7 @@ func (cm *CatMan) LeaderElector(
 	data []byte,
 ) error {
 STEP1:
-	path, seq, err := cm.CreateEphemeralSequential(parent+"/", data)
+	path, seq, err := cm.CreateProtectedEphemeralSequential(parent+"/", data)
 	if err != nil {
 		return err
 	}
