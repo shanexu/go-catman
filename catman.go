@@ -152,41 +152,6 @@ func (cm *CatMan) Children(parent string) ([]string, error) {
 	return children, err
 }
 
-func (cm *CatMan) LeaderElector(
-	ctx context.Context,
-	takeLeaderShip TakeLeaderShip,
-	parent string,
-	data []byte,
-) error {
-STEP1:
-	path, seq, err := cm.CreateEphemeralSequential(parent+"/", data)
-	if err != nil {
-		return err
-	}
-STEP2:
-	children, err := cm.Children(parent)
-	if err != nil {
-		return err
-	}
-	cs := childrenToCandidate(parent, children)
-	self := candidate{path, seq}
-	j, err := findCandidateJ(cs, self)
-	if err != nil {
-		if err != ErrNotInCandidates {
-			return err
-		}
-		goto STEP1
-	}
-	if j == nil {
-		takeLeaderShip()
-	}
-	err = cm.WatchDeletion(ctx, j.path)
-	if err != nil && err != zk.ErrNoNode {
-		return err
-	}
-	goto STEP2
-}
-
 func defaultACL() []zk.ACL {
 	const perm = zk.PermAdmin | zk.PermRead | zk.PermWrite | zk.PermCreate |
 		zk.PermDelete
