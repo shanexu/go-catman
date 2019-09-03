@@ -101,7 +101,7 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 		orderedChildren, events, err := q.orderedChildrenW()
 		if err != nil {
 			if err == zk.ErrNoNode {
-				if _, err := q.cm.CreatePath(q.dir, nil); err != nil {
+				if _, err := q.cm.Create(q.dir, nil); err != nil {
 					return nil, err
 				}
 				continue
@@ -144,7 +144,7 @@ func (q *DistributedQueue) Offer(data []byte) (bool, error) {
 		_, err := q.cm.CreateSequential(q.dir+"/"+prefix, data)
 		if err != nil {
 			if err == zk.ErrNoNode {
-				q.cm.CreatePath(q.dir, nil)
+				q.cm.Create(q.dir, nil)
 				continue
 			}
 			return false, err

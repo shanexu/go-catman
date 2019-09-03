@@ -14,6 +14,12 @@ var (
 	ErrBadPath = errors.New("bad path")
 )
 
+var (
+	OpenAclUnsafe = zk.WorldACL(zk.PermAll)
+	CreatorAllAcl = zk.AuthACL(zk.PermAll)
+	ReadAclUnsafe = zk.WorldACL(zk.PermRead)
+)
+
 type ErrUnexpectedEvent struct {
 	zk.EventType
 }
@@ -23,11 +29,16 @@ func (ue *ErrUnexpectedEvent) Error() string {
 }
 
 type CatMan struct {
-	conn *zk.Conn
+	conn       *zk.Conn
+	defaultACL []zk.ACL
 }
 
 func NewCatMan(conn *zk.Conn) *CatMan {
-	return &CatMan{conn}
+	return &CatMan{conn, OpenAclUnsafe}
+}
+
+func NewCatManWithOption(conn *zk.Conn, acl []zk.ACL) *CatMan {
+	return &CatMan{conn, acl}
 }
 
 func (cm *CatMan) Conn() *zk.Conn {
@@ -43,19 +54,71 @@ func (cm *CatMan) Delete(path string, version int32) error {
 	return cm.conn.Delete(path, version)
 }
 
-func (cm *CatMan) CreatePath(path string, data []byte) (string, error) {
-	return cm.conn.Create(path, data, 0, defaultACL())
+type CreateConfig struct {
+	Flag int32
+	ACL  []zk.ACL
 }
 
-func (cm *CatMan) CreateSequential(pathPrefix string, data []byte) (string, error) {
-	return cm.Conn().Create(pathPrefix, data, zk.FlagSequence, defaultACL())
+type CreateConfigOption func(*CreateConfig)
+
+func (cm *CatMan) Create(path string, data []byte, opts ...CreateConfigOption) (string, error) {
+	c := &CreateConfig{
+		Flag: 0,
+		ACL:  cm.defaultACL,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+	return cm.conn.Create(path, data, c.Flag, c.ACL)
+}
+
+func (cm *CatMan) CreateSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, error) {
+	c := &CreateConfig{
+		Flag: 0,
+		ACL:  cm.defaultACL,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return cm.conn.Create(pathPrefix, data, zk.FlagSequence, c.ACL)
+}
+
+func (cm *CatMan) CreateEphemeralSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, int64, error) {
+	c := &CreateConfig{
+		Flag: 0,
+		ACL:  cm.defaultACL,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	path, err := cm.conn.Create(pathPrefix, data, zk.FlagSequence|zk.FlagEphemeral, c.ACL)
+	if err != nil {
+		return "", 0, err
+	}
+	seq, err := path2Seq(path)
+	return path, seq, err
 }
 
 func (cm *CatMan) CreateProtectedEphemeralSequential(
 	path string,
 	data []byte,
+	opts ...CreateConfigOption,
 ) (string, int64, error) {
-	path, err := cm.conn.CreateProtectedEphemeralSequential(path, data, defaultACL())
+	c := &CreateConfig{
+		Flag: 0,
+		ACL:  cm.defaultACL,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	path, err := cm.conn.CreateProtectedEphemeralSequential(path, data, c.ACL)
 	if err != nil {
 		return "", 0, err
 	}
@@ -168,12 +231,6 @@ func (cm *CatMan) Children(parent string) ([]string, error) {
 func (cm *CatMan) ChildrenW(parent string) ([]string, <-chan zk.Event, error) {
 	children, _, events, err := cm.conn.ChildrenW(parent)
 	return children, events, err
-}
-
-func defaultACL() []zk.ACL {
-	const perm = zk.PermAdmin | zk.PermRead | zk.PermWrite | zk.PermCreate |
-		zk.PermDelete
-	return zk.WorldACL(perm)
 }
 
 type Watcher interface {
