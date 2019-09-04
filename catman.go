@@ -29,7 +29,7 @@ func (ue *ErrUnexpectedEvent) Error() string {
 }
 
 type CatMan struct {
-	conn       *zk.Conn
+	*zk.Conn
 	defaultACL []zk.ACL
 }
 
@@ -41,17 +41,13 @@ func NewCatManWithOption(conn *zk.Conn, acl []zk.ACL) *CatMan {
 	return &CatMan{conn, acl}
 }
 
-func (cm *CatMan) Conn() *zk.Conn {
-	return cm.conn
-}
-
-func (cm *CatMan) Get(path string) ([]byte, error) {
-	data, _, err := cm.conn.Get(path)
+func (cm *CatMan) CMGet(path string) ([]byte, error) {
+	data, _, err := cm.Conn.Get(path)
 	return data, err
 }
 
-func (cm *CatMan) Delete(path string, version int32) error {
-	return cm.conn.Delete(path, version)
+func (cm *CatMan) CMDelete(path string, version int32) error {
+	return cm.Conn.Delete(path, version)
 }
 
 type CreateConfig struct {
@@ -61,7 +57,7 @@ type CreateConfig struct {
 
 type CreateConfigOption func(*CreateConfig)
 
-func (cm *CatMan) Create(path string, data []byte, opts ...CreateConfigOption) (string, error) {
+func (cm *CatMan) CMCreate(path string, data []byte, opts ...CreateConfigOption) (string, error) {
 	c := &CreateConfig{
 		Flag: 0,
 		ACL:  cm.defaultACL,
@@ -70,10 +66,10 @@ func (cm *CatMan) Create(path string, data []byte, opts ...CreateConfigOption) (
 	for _, opt := range opts {
 		opt(c)
 	}
-	return cm.conn.Create(path, data, c.Flag, c.ACL)
+	return cm.Conn.Create(path, data, c.Flag, c.ACL)
 }
 
-func (cm *CatMan) CreateSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, error) {
+func (cm *CatMan) CMCreateSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, error) {
 	c := &CreateConfig{
 		Flag: 0,
 		ACL:  cm.defaultACL,
@@ -83,10 +79,10 @@ func (cm *CatMan) CreateSequential(pathPrefix string, data []byte, opts ...Creat
 		opt(c)
 	}
 
-	return cm.conn.Create(pathPrefix, data, zk.FlagSequence, c.ACL)
+	return cm.Conn.Create(pathPrefix, data, zk.FlagSequence, c.ACL)
 }
 
-func (cm *CatMan) CreateEphemeralSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, int64, error) {
+func (cm *CatMan) CMCreateEphemeralSequential(pathPrefix string, data []byte, opts ...CreateConfigOption) (string, int64, error) {
 	c := &CreateConfig{
 		Flag: 0,
 		ACL:  cm.defaultACL,
@@ -96,7 +92,7 @@ func (cm *CatMan) CreateEphemeralSequential(pathPrefix string, data []byte, opts
 		opt(c)
 	}
 
-	path, err := cm.conn.Create(pathPrefix, data, zk.FlagSequence|zk.FlagEphemeral, c.ACL)
+	path, err := cm.Conn.Create(pathPrefix, data, zk.FlagSequence|zk.FlagEphemeral, c.ACL)
 	if err != nil {
 		return "", 0, err
 	}
@@ -104,7 +100,7 @@ func (cm *CatMan) CreateEphemeralSequential(pathPrefix string, data []byte, opts
 	return path, seq, err
 }
 
-func (cm *CatMan) CreateProtectedEphemeralSequential(
+func (cm *CatMan) CMCreateProtectedEphemeralSequential(
 	path string,
 	data []byte,
 	opts ...CreateConfigOption,
@@ -118,7 +114,7 @@ func (cm *CatMan) CreateProtectedEphemeralSequential(
 		opt(c)
 	}
 
-	path, err := cm.conn.CreateProtectedEphemeralSequential(path, data, c.ACL)
+	path, err := cm.Conn.CreateProtectedEphemeralSequential(path, data, c.ACL)
 	if err != nil {
 		return "", 0, err
 	}
@@ -135,13 +131,23 @@ func path2Seq(path string) (int64, error) {
 	return seq, err
 }
 
-func (cm *CatMan) Watch(ctx context.Context, path string, ch chan<- []byte) error {
+func (cm *CatMan) CMChildren(parent string) ([]string, error) {
+	children, _, err := cm.Conn.Children(parent)
+	return children, err
+}
+
+func (cm *CatMan) CMChildrenW(parent string) ([]string, <-chan zk.Event, error) {
+	children, _, events, err := cm.Conn.ChildrenW(parent)
+	return children, events, err
+}
+
+func (cm *CatMan) Subscribe(ctx context.Context, path string, ch chan<- []byte) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
-			value, _, events, err := cm.conn.GetW(path)
+			value, _, events, err := cm.Conn.GetW(path)
 			if err != nil {
 				return err
 			}
@@ -161,13 +167,13 @@ func (cm *CatMan) Watch(ctx context.Context, path string, ch chan<- []byte) erro
 	}
 }
 
-func (cm *CatMan) WatchDeletion(ctx context.Context, path string) error {
+func (cm *CatMan) SubscribeExistence(ctx context.Context, path string) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			_, _, events, err := cm.conn.GetW(path)
+			_, _, events, err := cm.Conn.ExistsW(path)
 			if err != nil {
 				return err
 			}
@@ -176,8 +182,6 @@ func (cm *CatMan) WatchDeletion(ctx context.Context, path string) error {
 				return ctx.Err()
 			case e := <-events:
 				switch e.Type {
-				case zk.EventNodeDataChanged:
-					continue
 				case zk.EventNodeDeleted:
 					return nil
 				default:
@@ -188,7 +192,7 @@ func (cm *CatMan) WatchDeletion(ctx context.Context, path string) error {
 	}
 }
 
-func (cm *CatMan) WatchChildren(
+func (cm *CatMan) SubscribeChildren(
 	ctx context.Context,
 	path string,
 	ch chan<- []string,
@@ -199,7 +203,7 @@ func (cm *CatMan) WatchChildren(
 		case <-ctx.Done():
 			return nil
 		default:
-			value, _, events, err := cm.conn.ChildrenW(path)
+			value, _, events, err := cm.Conn.ChildrenW(path)
 			if err != nil {
 				return err
 			}
@@ -221,16 +225,6 @@ func (cm *CatMan) WatchChildren(
 			}
 		}
 	}
-}
-
-func (cm *CatMan) Children(parent string) ([]string, error) {
-	children, _, err := cm.conn.Children(parent)
-	return children, err
-}
-
-func (cm *CatMan) ChildrenW(parent string) ([]string, <-chan zk.Event, error) {
-	children, _, events, err := cm.conn.ChildrenW(parent)
-	return children, events, err
 }
 
 type Watcher interface {

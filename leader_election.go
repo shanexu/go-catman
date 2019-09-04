@@ -20,12 +20,12 @@ func (cm *CatMan) LeaderElector(
 	data []byte,
 ) error {
 STEP1:
-	path, seq, err := cm.CreateProtectedEphemeralSequential(parent+"/", data)
+	path, seq, err := cm.CMCreateProtectedEphemeralSequential(parent+"/", data)
 	if err != nil {
 		return err
 	}
 STEP2:
-	children, err := cm.Children(parent)
+	children, err := cm.CMChildren(parent)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ STEP2:
 	if j == nil {
 		takeLeaderShip()
 	}
-	err = cm.WatchDeletion(ctx, j.path)
+	err = cm.SubscribeExistence(ctx, j.path)
 	if err != nil && err != zk.ErrNoNode {
 		return err
 	}
