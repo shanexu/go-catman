@@ -42,7 +42,7 @@ type LockListener interface {
 	LockReleased()
 }
 
-func (cm *CatMan) NewRWLocker(dir string, acl []zk.ACL) *Lock {
+func (cm *CatMan) NewLocker(dir string, acl []zk.ACL) *Lock {
 	l := &Lock{
 		cm:         cm,
 		closed:     atomic.NewBool(false),
