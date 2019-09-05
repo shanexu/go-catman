@@ -2,12 +2,12 @@ package catman
 
 import (
 	"errors"
-	"fmt"
-	"github.com/emirpasic/gods/sets/treeset"
-	"github.com/samuel/go-zookeeper/zk"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/emirpasic/gods/sets/treeset"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 func TestLock_retryOperation(t *testing.T) {
@@ -57,7 +57,6 @@ func TestLock_retryOperation(t *testing.T) {
 				c := 0
 				return ZooKeeperOperationFunc(func() (bool, error) {
 					c++
-					fmt.Println(c)
 					if c == 3 {
 						return true, nil
 					}
@@ -96,7 +95,22 @@ func Test_largestLessThan(t *testing.T) {
 		args  args
 		wantZ *ZNodeName
 	}{
-		// TODO: Add test cases.
+		{
+			"case1",
+			args{
+				treeset.NewWith(ZNodeNameComparator, NewZNodeName("hello-0001"), NewZNodeName("hello-0003"), NewZNodeName("hello-0002")),
+				NewZNodeName("hello-0001"),
+			},
+			nil,
+		},
+		{
+			"case2",
+			args{
+				treeset.NewWith(ZNodeNameComparator, NewZNodeName("hello-0001"), NewZNodeName("hello-0003"), NewZNodeName("hello-0002")),
+				NewZNodeName("hello-0002"),
+			},
+			NewZNodeName("hello-0001"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
