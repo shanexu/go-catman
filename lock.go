@@ -42,7 +42,7 @@ type LockListener interface {
 	LockReleased()
 }
 
-func (cm *CatMan) NewLocker(dir string, acl []zk.ACL) *Lock {
+func (cm *CatMan) NewLock(dir string, acl []zk.ACL, callback LockListener) *Lock {
 	l := &Lock{
 		cm:         cm,
 		closed:     atomic.NewBool(false),
@@ -51,6 +51,7 @@ func (cm *CatMan) NewLocker(dir string, acl []zk.ACL) *Lock {
 		dir:        dir,
 		acl:        acl,
 		data:       []byte{0x12, 0x34},
+		callback:   callback,
 	}
 	return l
 }
@@ -78,19 +79,9 @@ func (l *Lock) Acl() []zk.ACL {
 	return l.acl
 }
 
-// set the acl.
-func (l *Lock) SetAcl(acl []zk.ACL) {
-	l.acl = acl
-}
-
 // get the retry delay
 func (l *Lock) RetryDelay() time.Duration {
 	return l.retryDelay
-}
-
-// Sets the time waited between retry delays.
-func (l *Lock) SetRetryDelay(retryDelay time.Duration) {
-	l.retryDelay = retryDelay
 }
 
 // Perform the given operation, retrying if the connection fails.
