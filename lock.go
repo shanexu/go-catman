@@ -20,6 +20,7 @@ type Lock struct {
 	dir        string
 	id         string
 	idName     *ZNodeName
+	ownerId    string
 	data       []byte
 	l          sync.Mutex
 	callback   LockListener
@@ -69,6 +70,16 @@ func (l *Lock) Closed() bool {
 	return l.closed.Load()
 }
 
+// return the current locklistener.
+func (l *Lock) LockListener() LockListener {
+	return l.callback
+}
+
+// register a different call back listener.
+func (l *Lock) SetLockListener(callback LockListener) {
+	l.callback = callback
+}
+
 // return zookeeper client instance.
 func (l *Lock) CatMan() *CatMan {
 	return l.cm
@@ -79,9 +90,19 @@ func (l *Lock) Acl() []zk.ACL {
 	return l.acl
 }
 
+// set the acl.
+func (l *Lock) SetAcl(acl []zk.ACL) {
+	l.acl = acl
+}
+
 // get the retry delay
 func (l *Lock) RetryDelay() time.Duration {
 	return l.retryDelay
+}
+
+// Sets the time waited between retry delays.
+func (l *Lock) SetRetryDelay(retryDelay time.Duration) {
+	l.retryDelay = retryDelay
 }
 
 // Perform the given operation, retrying if the connection fails.
@@ -175,6 +196,10 @@ func (l *Lock) Unlock() error {
 	return nil
 }
 
+func (l *Lock) IsOwner() bool {
+	return l.id != "" && l.id == l.ownerId
+}
+
 // find if we have been created earler if not create our node.
 func (l *Lock) findPrefixInChildren(prefix string, dir string) error {
 	names, err := l.cm.CMChildren(dir)
@@ -222,17 +247,28 @@ func (l *Lock) zop() (bool, error) {
 			}
 			it := sortedNames.Iterator()
 			it.Next()
-			owerId := it.Value().(*ZNodeName).Name()
+			l.ownerId = it.Value().(*ZNodeName).Name()
 			lastChild := largestLessThan(sortedNames, l.idName)
 			if lastChild != nil {
 				lastChildId := lastChild.Name()
-				l.cm.Exists(lastChildId)
-				fmt.Println(owerId, lastChildId)
+				ok, _, events, err := l.cm.ExistsW(lastChildId) // watch
+				if err != nil && err != zk.ErrNoNode {
+					return false, err
+				}
+				if !ok {
+				} else {
+					<-events
+				}
 			} else {
-
+				if l.IsOwner() {
+					if l.callback != nil {
+						l.callback.LockAcquired()
+					}
+				}
+				return true, nil
 			}
 		}
-		if !(l.id != "") {
+		if l.id != "" {
 			break
 		}
 	}
