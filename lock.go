@@ -3,6 +3,7 @@ package catman
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emirpasic/gods/sets/treeset"
@@ -20,6 +21,8 @@ type Lock struct {
 	id         string
 	idName     *ZNodeName
 	data       []byte
+	l          sync.Mutex
+	callback   LockListener
 }
 
 // Performs the operation - which may be involved multiple times if the connection
@@ -60,6 +63,11 @@ func (l *Lock) Close() {
 	}
 }
 
+// Returns true if this protocol has been closed.
+func (l *Lock) Closed() bool {
+	return l.closed.Load()
+}
+
 // return zookeeper client instance.
 func (l *Lock) CatMan() *CatMan {
 	return l.cm
@@ -86,7 +94,7 @@ func (l *Lock) SetRetryDelay(retryDelay time.Duration) {
 }
 
 // Perform the given operation, retrying if the connection fails.
-func (l *Lock) retryOperation(operation ZooKeeperOperation) (interface{}, error) {
+func (l *Lock) retryOperation(operation ZooKeeperOperation) (bool, error) {
 	var error error
 	for i := 0; i < l.retryCount; i++ {
 		result, err := operation.Execute()
@@ -94,7 +102,7 @@ func (l *Lock) retryOperation(operation ZooKeeperOperation) (interface{}, error)
 			return result, nil
 		}
 		if err == zk.ErrSessionExpired {
-			return nil, err
+			return false, err
 		}
 		if err == zk.ErrConnectionClosed {
 			error = err
@@ -102,7 +110,7 @@ func (l *Lock) retryOperation(operation ZooKeeperOperation) (interface{}, error)
 		l.retryWait(i)
 
 	}
-	return nil, error
+	return false, error
 }
 
 // Ensures that the given path exists with no data, the current
@@ -143,6 +151,36 @@ func (l *Lock) retryWait(attemptCount int) {
 	if attemptCount > 0 {
 		time.Sleep(l.retryDelay * time.Duration(attemptCount))
 	}
+}
+
+func (l *Lock) Lock() (bool, error) {
+	l.l.Lock()
+	defer l.l.Unlock()
+	if l.Closed() {
+		return false, nil
+	}
+	l.ensurePathExists(l.dir)
+
+	return l.retryOperation(ZooKeeperOperationFunc(l.zop))
+}
+
+func (l *Lock) Unlock() error {
+	l.l.Lock()
+	defer l.l.Unlock()
+	if !l.Closed() && l.id != "" {
+		err := l.cm.Delete(l.id, -1)
+		if err != nil && err != zk.ErrNoNode {
+			return err
+		}
+		defer func() {
+			if l.callback != nil {
+				l.callback.LockReleased()
+			}
+			l.id = ""
+		}()
+		return nil
+	}
+	return nil
 }
 
 // find if we have been created earler if not create our node.
@@ -196,6 +234,7 @@ func (l *Lock) zop() (bool, error) {
 			lastChild := largestLessThan(sortedNames, l.idName)
 			if lastChild != nil {
 				lastChildId := lastChild.Name()
+				l.cm.Exists(lastChildId)
 				fmt.Println(owerId, lastChildId)
 			} else {
 
