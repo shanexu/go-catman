@@ -106,9 +106,10 @@ func (l *Lock) retryOperation(operation ZooKeeperOperation) (bool, error) {
 		}
 		if err == zk.ErrConnectionClosed {
 			error = err
+			l.retryWait(i)
+			continue
 		}
-		l.retryWait(i)
-
+		return false, err
 	}
 	return false, error
 }

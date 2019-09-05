@@ -1,102 +1,19 @@
 package catman
 
 import (
-	"reflect"
-	"sync"
-	"testing"
-	"time"
-
+	"errors"
+	"fmt"
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/samuel/go-zookeeper/zk"
-	"go.uber.org/atomic"
+	"reflect"
+	"testing"
+	"time"
 )
-
-func TestCatMan_NewLocker(t *testing.T) {
-	type fields struct {
-		Conn       *zk.Conn
-		defaultACL []zk.ACL
-	}
-	type args struct {
-		dir string
-		acl []zk.ACL
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   *Lock
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cm := &CatMan{
-				Conn:       tt.fields.Conn,
-				defaultACL: tt.fields.defaultACL,
-			}
-			if got := cm.NewLocker(tt.args.dir, tt.args.acl); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewLocker() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLock_Closed(t *testing.T) {
-	type fields struct {
-		cm         *CatMan
-		acl        []zk.ACL
-		closed     *atomic.Bool
-		retryDelay time.Duration
-		retryCount int
-		dir        string
-		id         string
-		idName     *ZNodeName
-		data       []byte
-		l          sync.Mutex
-		callback   LockListener
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := &Lock{
-				cm:         tt.fields.cm,
-				acl:        tt.fields.acl,
-				closed:     tt.fields.closed,
-				retryDelay: tt.fields.retryDelay,
-				retryCount: tt.fields.retryCount,
-				dir:        tt.fields.dir,
-				id:         tt.fields.id,
-				idName:     tt.fields.idName,
-				data:       tt.fields.data,
-				l:          tt.fields.l,
-				callback:   tt.fields.callback,
-			}
-			if got := l.Closed(); got != tt.want {
-				t.Errorf("Closed() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestLock_retryOperation(t *testing.T) {
 	type fields struct {
-		cm         *CatMan
-		acl        []zk.ACL
-		closed     *atomic.Bool
 		retryDelay time.Duration
 		retryCount int
-		dir        string
-		id         string
-		idName     *ZNodeName
-		data       []byte
-		l          sync.Mutex
-		callback   LockListener
 	}
 	type args struct {
 		operation ZooKeeperOperation
@@ -108,22 +25,54 @@ func TestLock_retryOperation(t *testing.T) {
 		want    bool
 		wantErr bool
 	}{
-		// TODO: Add test cases.
+		{
+			"case1",
+			fields{time.Millisecond, 3},
+			args{ZooKeeperOperationFunc(func() (bool, error) {
+				return true, nil
+			})},
+			true,
+			false,
+		},
+		{
+			"case2",
+			fields{time.Millisecond, 3},
+			args{func() ZooKeeperOperation {
+				c := 0
+				return ZooKeeperOperationFunc(func() (bool, error) {
+					c++
+					if c == 3 {
+						return true, nil
+					}
+					return false, zk.ErrConnectionClosed
+				})
+			}()},
+			true,
+			false,
+		},
+		{
+			"case2",
+			fields{time.Millisecond, 2},
+			args{func() ZooKeeperOperation {
+				c := 0
+				return ZooKeeperOperationFunc(func() (bool, error) {
+					c++
+					fmt.Println(c)
+					if c == 3 {
+						return true, nil
+					}
+					return false, errors.New("Bang!")
+				})
+			}()},
+			false,
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Lock{
-				cm:         tt.fields.cm,
-				acl:        tt.fields.acl,
-				closed:     tt.fields.closed,
 				retryDelay: tt.fields.retryDelay,
 				retryCount: tt.fields.retryCount,
-				dir:        tt.fields.dir,
-				id:         tt.fields.id,
-				idName:     tt.fields.idName,
-				data:       tt.fields.data,
-				l:          tt.fields.l,
-				callback:   tt.fields.callback,
 			}
 			got, err := l.retryOperation(tt.args.operation)
 			if (err != nil) != tt.wantErr {
