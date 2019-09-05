@@ -251,7 +251,7 @@ func (l *Lock) zop() (bool, error) {
 			lastChild := largestLessThan(sortedNames, l.idName)
 			if lastChild != nil {
 				lastChildId := lastChild.Name()
-				ok, _, events, err := l.cm.ExistsW(lastChildId) // watch
+				ok, _, events, err := l.cm.ExistsW(lastChildId)
 				if err != nil && err != zk.ErrNoNode {
 					return false, err
 				}
@@ -259,6 +259,7 @@ func (l *Lock) zop() (bool, error) {
 				} else {
 					<-events
 				}
+				return l.zop()
 			} else {
 				if l.IsOwner() {
 					if l.callback != nil {
