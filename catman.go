@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
-	"time"
 )
 
 var (
