@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
+	"sync"
 )
 
 var (
@@ -32,6 +33,7 @@ func (ue *ErrUnexpectedEvent) Error() string {
 type CatMan struct {
 	*zk.Conn
 	defaultACL []zk.ACL
+	wg         sync.WaitGroup
 }
 
 func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, watcher Watcher) (*CatMan, error) {
@@ -46,12 +48,14 @@ func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, wat
 	if watcher == nil {
 		watcher = defaultWatcherFunc
 	}
+	cm.wg.Add(1)
 	cm.processEvents(events, watcher)
 	return cm, nil
 }
 
 func (cm *CatMan) Close() {
 	cm.Conn.Close()
+	cm.wg.Wait()
 }
 
 func (cm *CatMan) processEvents(events <-chan zk.Event, watcher Watcher) {
@@ -59,7 +63,7 @@ func (cm *CatMan) processEvents(events <-chan zk.Event, watcher Watcher) {
 		for event := range events {
 			watcher.Process(event)
 		}
-		fmt.Println("closed")
+		cm.wg.Done()
 	}()
 }
 
