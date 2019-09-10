@@ -50,11 +50,16 @@ func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, wat
 	return cm, nil
 }
 
+func (cm *CatMan) Close() {
+	cm.Conn.Close()
+}
+
 func (cm *CatMan) processEvents(events <-chan zk.Event, watcher Watcher) {
 	go func() {
 		for event := range events {
 			watcher.Process(event)
 		}
+		fmt.Println("closed")
 	}()
 }
 
@@ -182,6 +187,22 @@ func (cm *CatMan) Subscribe(ctx context.Context, path string, ch chan<- []byte) 
 			}
 		}
 	}
+}
+
+func (cm *CatMan) CMExists(path string, watcher Watcher) (*zk.Stat, error) {
+	if watcher == nil {
+		_, stat, err := cm.Conn.Exists(path)
+		return stat, err
+	}
+	_, stat, events, err := cm.Conn.ExistsW(path)
+	if err != nil {
+		return stat, err
+	}
+	go func() {
+		event := <-events
+		watcher.Process(event)
+	}()
+	return stat, err
 }
 
 func (cm *CatMan) SubscribeExistence(ctx context.Context, path string) error {
