@@ -46,11 +46,11 @@ func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, wat
 	if watcher == nil {
 		watcher = defaultWatcherFunc
 	}
-	cm.processEvent(events, watcher)
+	cm.processEvents(events, watcher)
 	return cm, nil
 }
 
-func (cm *CatMan) processEvent(events <-chan zk.Event, watcher Watcher) {
+func (cm *CatMan) processEvents(events <-chan zk.Event, watcher Watcher) {
 	go func() {
 		for event := range events {
 			watcher.Process(event)
