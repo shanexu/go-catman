@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samuel/go-zookeeper/zk"
+	"time"
 )
 
 var (
@@ -33,12 +34,28 @@ type CatMan struct {
 	defaultACL []zk.ACL
 }
 
-func NewCatMan(conn *zk.Conn) *CatMan {
-	return &CatMan{conn, OpenAclUnsafe}
+func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, watcher Watcher) (*CatMan, error) {
+	conn, events, err := zk.Connect(servers, sessionTimeout)
+	if err != nil {
+		return nil, err
+	}
+	cm := &CatMan{
+		Conn:       conn,
+		defaultACL: acl,
+	}
+	if watcher == nil {
+		watcher = defaultWatcherFunc
+	}
+	cm.processEvent(events, watcher)
+	return cm, nil
 }
 
-func NewCatManWithOption(conn *zk.Conn, acl []zk.ACL) *CatMan {
-	return &CatMan{conn, acl}
+func (cm *CatMan) processEvent(events <-chan zk.Event, watcher Watcher) {
+	go func() {
+		for event := range events {
+			watcher.Process(event)
+		}
+	}()
 }
 
 func (cm *CatMan) CMGet(path string) ([]byte, error) {
@@ -230,3 +247,11 @@ func (cm *CatMan) SubscribeChildren(
 type Watcher interface {
 	Process(zk.Event)
 }
+
+type WatcherFunc func(zk.Event)
+
+func (f WatcherFunc) Process(event zk.Event) {
+	f(event)
+}
+
+var defaultWatcherFunc WatcherFunc = func(_ zk.Event) {}

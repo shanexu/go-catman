@@ -42,16 +42,20 @@ func (l *LeaderElectionSupport) Start() (err error) {
 		return errors.New("hostname is empty")
 	}
 
-	err = l.makeOffer()
 	defer func() {
 		if err != nil {
 			l.becomeFailed(err)
 		}
 	}()
+
+	err = l.makeOffer()
 	if err != nil {
 		return
 	}
-	l.determineElectionStatus()
+	err = l.determineElectionStatus()
+	if err != nil {
+		return
+	}
 	return nil
 }
 
