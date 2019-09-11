@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
-	"sync"
 )
 
 var (
