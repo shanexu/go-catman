@@ -117,7 +117,7 @@ func (l *LeaderElectionSupport) determineElectionStatus() error {
 	}
 	currentLeaderOffer.SetId(int(id))
 
-	cs, err := l.cm.CMChildren(l.rootNodeName)
+	cs, err := l.cm.CMChildren(l.rootNodeName, nil)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (l *LeaderElectionSupport) becomeFailed(err error) error {
 }
 
 func (l *LeaderElectionSupport) GetLeaderHostName() (string, error) {
-	cs, err := l.cm.CMChildren(l.rootNodeName)
+	cs, err := l.cm.CMChildren(l.rootNodeName, nil)
 	if err != nil {
 		return "", err
 	}

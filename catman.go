@@ -52,10 +52,11 @@ func NewCatMan(servers []string, sessionTimeout time.Duration, opts ...CatManCon
 	if err != nil {
 		return nil, err
 	}
+	l := utils.NewSimpleLogger()
 	c := &CatManConfig{
 		ACL:     OpenAclUnsafe,
-		Watcher: defaultWatcherFunc,
-		Log:     utils.NewSimpleLogger(),
+		Watcher: defaultWatchFuncGen(l),
+		Log:     l,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -174,8 +175,16 @@ func path2Seq(path string) (int64, error) {
 	return seq, err
 }
 
-func (cm *CatMan) CMChildren(parent string) ([]string, error) {
-	children, _, err := cm.Conn.Children(parent)
+func (cm *CatMan) CMChildren(parent string, watcher Watcher) ([]string, error) {
+	if watcher == nil {
+		children, _, err := cm.Conn.Children(parent)
+		return children, err
+	}
+	children, _, events, err := cm.Conn.ChildrenW(parent)
+	go func() {
+		event := <-events
+		watcher.Process(event)
+	}()
 	return children, err
 }
 
@@ -296,4 +305,11 @@ func (f WatcherFunc) Process(event zk.Event) {
 	f(event)
 }
 
-var defaultWatcherFunc WatcherFunc = func(_ zk.Event) {}
+func defaultWatchFuncGen(log utils.Logger) WatcherFunc {
+	{
+		log := log
+		return func(event zk.Event) {
+			log.Debugf("receive events %+v", event)
+		}
+	}
+}

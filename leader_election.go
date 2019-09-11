@@ -25,7 +25,7 @@ STEP1:
 		return err
 	}
 STEP2:
-	children, err := cm.CMChildren(parent)
+	children, err := cm.CMChildren(parent, nil)
 	if err != nil {
 		return err
 	}

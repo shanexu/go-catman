@@ -202,7 +202,7 @@ func (l *Lock) IsOwner() bool {
 
 // find if we have been created earler if not create our node.
 func (l *Lock) findPrefixInChildren(prefix string, dir string) error {
-	names, err := l.cm.CMChildren(dir)
+	names, err := l.cm.CMChildren(dir, nil)
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,8 @@ func (l *Lock) zop() (bool, error) {
 			}
 			l.idName = NewZNodeName(l.id)
 		}
-		names, err := l.cm.CMChildren(l.dir)
+
+		names, err := l.cm.CMChildren(l.dir, nil)
 		if err != nil {
 			return false, err
 		}

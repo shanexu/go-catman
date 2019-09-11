@@ -50,6 +50,9 @@ func NewSimpleLogger(level ...Level) *SimpleLogger {
 	if len(level) > 0 {
 		minLevel = level[0]
 	}
+	if minLevel > Fatal {
+		panic(fmt.Sprintf("minLevel %q is larger than Fatal level\n", minLevel))
+	}
 	return &SimpleLogger{
 		debugLog: log.New(os.Stderr, tagDebug, flags),
 		infoLog:  log.New(os.Stderr, tagInfo, flags),
@@ -63,6 +66,9 @@ func NewSimpleLogger(level ...Level) *SimpleLogger {
 func (l *SimpleLogger) output(s Level, depth int, txt string) {
 	l.logLock.Lock()
 	defer l.logLock.Unlock()
+	if s < l.minLevel {
+		return
+	}
 	switch s {
 	case Debug:
 		l.debugLog.Output(3+depth, txt)

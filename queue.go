@@ -198,7 +198,7 @@ func (q *DistributedQueue) children2Ordered(childNames []string) *treemap.Map {
 }
 
 func (q *DistributedQueue) orderedChildren() (*treemap.Map, error) {
-	childNames, err := q.cm.CMChildren(q.dir)
+	childNames, err := q.cm.CMChildren(q.dir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, er
 }
 
 func (q *DistributedQueue) smallestChildName() (string, error) {
-	childNames, err := q.cm.CMChildren(q.dir)
+	childNames, err := q.cm.CMChildren(q.dir, nil)
 	if err != nil {
 		if err == zk.ErrNoNode {
 			q.log.Warnf("caught: %s", err)
