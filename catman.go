@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
+
+	"github.com/shanexu/go-catman/utils"
 )
 
 var (
@@ -34,22 +36,37 @@ type CatMan struct {
 	*zk.Conn
 	defaultACL []zk.ACL
 	wg         sync.WaitGroup
+	log        utils.Logger
 }
 
-func NewCatMan(servers []string, sessionTimeout time.Duration, acl []zk.ACL, watcher Watcher) (*CatMan, error) {
+type CatManConfig struct {
+	ACL     []zk.ACL
+	Watcher Watcher
+	Log     utils.Logger
+}
+
+type CatManConfigOption func(*CatManConfig)
+
+func NewCatMan(servers []string, sessionTimeout time.Duration, opts ...CatManConfigOption) (*CatMan, error) {
 	conn, events, err := zk.Connect(servers, sessionTimeout)
 	if err != nil {
 		return nil, err
 	}
+	c := &CatManConfig{
+		ACL:     OpenAclUnsafe,
+		Watcher: defaultWatcherFunc,
+		Log:     utils.NewSimpleLogger(),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
 	cm := &CatMan{
 		Conn:       conn,
-		defaultACL: acl,
-	}
-	if watcher == nil {
-		watcher = defaultWatcherFunc
+		defaultACL: c.ACL,
+		log:        c.Log,
 	}
 	cm.wg.Add(1)
-	cm.processEvents(events, watcher)
+	cm.processEvents(events, c.Watcher)
 	return cm, nil
 }
 
