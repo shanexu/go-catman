@@ -8,6 +8,8 @@ import (
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/samuel/go-zookeeper/zk"
+
+	"github.com/shanexu/go-catman/utils"
 )
 
 const prefix = "qn-"
@@ -19,6 +21,7 @@ var (
 type DistributedQueue struct {
 	cm  *CatMan
 	dir string
+	log utils.Logger
 }
 
 // Return the head of the queue without modifying the queue.
@@ -186,7 +189,7 @@ func (q *DistributedQueue) children2Ordered(childNames []string) *treemap.Map {
 		suffix := childName[len(prefix):]
 		childId, err := strconv.ParseInt(suffix, 10, 64)
 		if err != nil {
-			// number format error
+			q.log.Warnf("found child node with improper format : %s %s", childName, err)
 			continue
 		}
 		orderedChildren.Put(int(childId), childName)
@@ -217,6 +220,10 @@ func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, er
 func (q *DistributedQueue) smallestChildName() (string, error) {
 	childNames, err := q.cm.CMChildren(q.dir)
 	if err != nil {
+		if err == zk.ErrNoNode {
+			q.log.Warnf("caught: %s", err)
+			return "", nil
+		}
 		return "", err
 	}
 
@@ -224,12 +231,13 @@ func (q *DistributedQueue) smallestChildName() (string, error) {
 	var minName string
 	for _, childName := range childNames {
 		if !strings.HasPrefix(childName, prefix) {
+			q.log.Warnf("found child node with improper name: %s", childName)
 			continue
 		}
 		suffix := childName[len(prefix):]
 		childId, err := strconv.ParseInt(suffix, 10, 64)
 		if err != nil {
-			// number format error
+			q.log.Warnf("Found child node with improper format : %s %s", childName, err)
 			continue
 		}
 		if childId < minId {
