@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/samuel/go-zookeeper/zk"
@@ -27,7 +28,7 @@ type DistributedQueue struct {
 // Return the head of the queue without modifying the queue.
 func (q *DistributedQueue) Element() ([]byte, error) {
 	for {
-		orderedChildren, err := q.orderedChildren()
+		orderedChildren, err := q.orderedChildren(nil)
 		if err != nil {
 			if err == zk.ErrNoNode {
 				return nil, ErrNoSuchElement
@@ -59,7 +60,7 @@ func (q *DistributedQueue) Element() ([]byte, error) {
 // Attempts to remove the head of the queue and return it.
 func (q *DistributedQueue) Remove() ([]byte, error) {
 	for {
-		orderedChildren, err := q.orderedChildren()
+		orderedChildren, err := q.orderedChildren(nil)
 		if err != nil {
 			if err == zk.ErrNoNode {
 				return nil, ErrNoSuchElement
@@ -101,7 +102,8 @@ func (q *DistributedQueue) Remove() ([]byte, error) {
 // Removes the head of the queue and returns it, blocks until it succeeds.
 func (q *DistributedQueue) Take() ([]byte, error) {
 	for {
-		orderedChildren, events, err := q.orderedChildrenW()
+		childWatcher := newLatchChildWatcher()
+		orderedChildren, err := q.orderedChildren(childWatcher)
 		if err != nil {
 			if err == zk.ErrNoNode {
 				if _, err := q.cm.CMCreate(q.dir, nil); err != nil {
@@ -111,7 +113,7 @@ func (q *DistributedQueue) Take() ([]byte, error) {
 			}
 		}
 		if orderedChildren.Size() == 0 {
-			<-events
+			childWatcher.Await()
 			continue
 		}
 		for _, headNode := range orderedChildren.Values() {
@@ -197,8 +199,8 @@ func (q *DistributedQueue) children2Ordered(childNames []string) *treemap.Map {
 	return orderedChildren
 }
 
-func (q *DistributedQueue) orderedChildren() (*treemap.Map, error) {
-	childNames, err := q.cm.CMChildren(q.dir, nil)
+func (q *DistributedQueue) orderedChildren(watcher Watcher) (*treemap.Map, error) {
+	childNames, err := q.cm.CMChildren(q.dir, watcher)
 	if err != nil {
 		return nil, err
 	}
@@ -207,15 +209,15 @@ func (q *DistributedQueue) orderedChildren() (*treemap.Map, error) {
 	return orderedChildren, nil
 }
 
-func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, error) {
-	childNames, events, err := q.cm.CMChildrenW(q.dir)
-	if err != nil {
-		return nil, nil, err
-	}
+// func (q *DistributedQueue) orderedChildrenW() (*treemap.Map, <-chan zk.Event, error) {
+// 	childNames, events, err := q.cm.CMChildrenW(q.dir)
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
 
-	orderedChildren := q.children2Ordered(childNames)
-	return orderedChildren, events, nil
-}
+// 	orderedChildren := q.children2Ordered(childNames)
+// 	return orderedChildren, events, nil
+// }
 
 func (q *DistributedQueue) smallestChildName() (string, error) {
 	childNames, err := q.cm.CMChildren(q.dir, nil)
@@ -254,4 +256,22 @@ func (cm *CatMan) NewDistributedQueue(dir string) *DistributedQueue {
 		cm:  cm,
 		dir: dir,
 	}
+}
+
+type latchChildWatcher struct {
+	latch sync.WaitGroup
+}
+
+func newLatchChildWatcher() *latchChildWatcher {
+	l := &latchChildWatcher{}
+	l.latch.Add(1)
+	return l
+}
+
+func (l *latchChildWatcher) Process(event zk.Event) {
+	l.latch.Done()
+}
+
+func (l *latchChildWatcher) Await() {
+	l.latch.Wait()
 }
