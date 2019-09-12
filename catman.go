@@ -188,11 +188,6 @@ func (cm *CatMan) CMChildren(parent string, watcher Watcher) ([]string, error) {
 	return children, err
 }
 
-func (cm *CatMan) CMChildrenW(parent string) ([]string, <-chan zk.Event, error) {
-	children, _, events, err := cm.Conn.ChildrenW(parent)
-	return children, events, err
-}
-
 func (cm *CatMan) Subscribe(ctx context.Context, path string, ch chan<- []byte) error {
 	for {
 		select {
@@ -233,66 +228,6 @@ func (cm *CatMan) CMExists(path string, watcher Watcher) (*zk.Stat, error) {
 		watcher.Process(event)
 	}()
 	return stat, err
-}
-
-func (cm *CatMan) SubscribeExistence(ctx context.Context, path string) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			_, _, events, err := cm.Conn.ExistsW(path)
-			if err != nil {
-				return err
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case e := <-events:
-				switch e.Type {
-				case zk.EventNodeDeleted:
-					return nil
-				default:
-					return &ErrUnexpectedEvent{e.Type}
-				}
-			}
-		}
-	}
-}
-
-func (cm *CatMan) SubscribeChildren(
-	ctx context.Context,
-	path string,
-	ch chan<- []string,
-) error {
-	var nodeDataChanged bool
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			value, _, events, err := cm.Conn.ChildrenW(path)
-			if err != nil {
-				return err
-			}
-			if !nodeDataChanged {
-				ch <- value
-			}
-			select {
-			case <-ctx.Done():
-				return nil
-			case e := <-events:
-				switch e.Type {
-				case zk.EventNodeDataChanged:
-					nodeDataChanged = true
-				case zk.EventNodeChildrenChanged:
-					nodeDataChanged = false
-				default:
-					return &ErrUnexpectedEvent{e.Type}
-				}
-			}
-		}
-	}
 }
 
 type Watcher interface {
