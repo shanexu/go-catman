@@ -1,7 +1,6 @@
 package catman
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -186,32 +185,6 @@ func (cm *CatMan) CMChildren(parent string, watcher Watcher) ([]string, error) {
 		watcher.Process(event)
 	}()
 	return children, err
-}
-
-func (cm *CatMan) Subscribe(ctx context.Context, path string, ch chan<- []byte) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			value, _, events, err := cm.Conn.GetW(path)
-			if err != nil {
-				return err
-			}
-			ch <- value
-			select {
-			case <-ctx.Done():
-				return nil
-			case e := <-events:
-				switch e.Type {
-				case zk.EventNodeDataChanged:
-					continue
-				default:
-					return &ErrUnexpectedEvent{e.Type}
-				}
-			}
-		}
-	}
 }
 
 func (cm *CatMan) CMExists(path string, watcher Watcher) (*zk.Stat, error) {
