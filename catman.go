@@ -207,6 +207,8 @@ type Watcher interface {
 	Process(zk.Event)
 }
 
+var _ Watcher = WatcherFunc(nil)
+
 type WatcherFunc func(zk.Event)
 
 func (f WatcherFunc) Process(event zk.Event) {
