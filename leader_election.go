@@ -104,6 +104,10 @@ func (l *LeaderElectionSupport) makeOffer() error {
 	return nil
 }
 
+func (l *LeaderElectionSupport) LeaderOffer() *LeaderOffer {
+	return l.leaderOffer
+}
+
 func (l *LeaderElectionSupport) determineElectionStatus() error {
 	l.state = ElectionStateDetermine
 	l.dispatchEvent(ElectionEventDetermineStart)
@@ -150,7 +154,7 @@ func (l *LeaderElectionSupport) becomeReady(neighborLeaderOffer *LeaderOffer) er
 	}
 	if ok {
 		event := <-events
-		l.process(event)
+		l.Process(event)
 		l.dispatchEvent(ElectionEventReadyStart)
 		l.state = ElectionStateReady
 		l.dispatchEvent(ElectionEventReadyComplete)
@@ -173,7 +177,7 @@ func (l *LeaderElectionSupport) becomeFailed(err error) error {
 	return nil
 }
 
-func (l *LeaderElectionSupport) GetLeaderHostName() (string, error) {
+func (l *LeaderElectionSupport) LeaderHostName() (string, error) {
 	cs, err := l.cm.CMChildren(l.rootNodeName, nil)
 	if err != nil {
 		return "", err
@@ -209,7 +213,7 @@ func (l *LeaderElectionSupport) toLeaderOffers(strings []string) ([]*LeaderOffer
 	return leaderOffers, nil
 }
 
-func (l *LeaderElectionSupport) process(event zk.Event) error {
+func (l *LeaderElectionSupport) Process(event zk.Event) error {
 	if event.Type == zk.EventNodeDeleted {
 		if event.Path != l.leaderOffer.NodePath() && l.state != ElectionStateStop {
 			err := l.determineElectionStatus()
@@ -250,14 +254,47 @@ func (l *LeaderElectionSupport) RemoveListener(listener LeaderElectionAware) {
 	l.listeners = append(l.listeners[0:i], l.listeners[i+1:]...)
 }
 
+func (l *LeaderElectionSupport) RootNodeName() string {
+	return l.rootNodeName
+}
+
 func (l *LeaderElectionSupport) SetRootNodeName(rootNodeName string) {
 	l.rootNodeName = rootNodeName
 }
 
-// Called during each state transition. Current, low level events are provided
-// at the beginning and end of each state. For instance, START may be followed
-// by OFFER_START, OFFER_COMPLETE, DETERMINE_START, DETERMINE_COMPLETE, and so
-// on
-type LeaderElectionAware interface {
-	OnElectionEvent(event ElectionEvent)
+func (l *LeaderElectionSupport) HostName() string {
+	return l.hostName
 }
+
+func (l *LeaderElectionSupport) SetHostName(hostName string) {
+	l.hostName = hostName
+}
+
+type ElectionEvent int
+
+const (
+	ElectionEventStart ElectionEvent = iota
+	ElectionEventOfferStart
+	ElectionEventOfferComplete
+	ElectionEventDetermineStart
+	ElectionEventDetermineComplete
+	ElectionEventElectedStart
+	ElectionEventElectedComplete
+	ElectionEventReadyStart
+	ElectionEventReadyComplete
+	ElectionEventFailed
+	ElectionEventStopStart
+	ElectionEventStopComplete
+)
+
+type ElectionState int
+
+const (
+	ElectionStateStart ElectionState = iota
+	ElectionStateOffer
+	ElectionStateDetermine
+	ElectionStateElected
+	ElectionStateReady
+	ElectionStateFailed
+	ElectionStateStop
+)
