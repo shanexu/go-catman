@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/samuel/go-zookeeper/zk"
+
+	"github.com/shanexu/go-catman/utils"
 )
 
 type LeaderElectionSupport struct {
@@ -19,6 +21,7 @@ type LeaderElectionSupport struct {
 	hostName     string
 	l            sync.Mutex
 	ll           sync.RWMutex
+	log          utils.Logger
 }
 
 func (cm *CatMan) NewLeaderElectionSupport(hostName, rootNodeName string) *LeaderElectionSupport {
@@ -27,54 +30,59 @@ func (cm *CatMan) NewLeaderElectionSupport(hostName, rootNodeName string) *Leade
 		cm:           cm,
 		hostName:     hostName,
 		rootNodeName: rootNodeName,
+		log:          cm.log,
 	}
 }
 
-func (l *LeaderElectionSupport) Start() (err error) {
+// start the election process. This method will create a leader offer,
+// determine its status, and either become the leader or become ready.
+func (l *LeaderElectionSupport) Start() error {
 	l.l.Lock()
 	defer l.l.Unlock()
 
+	l.state = ElectionStateStart
+	l.dispatchEvent(ElectionEventStart)
+
+	l.log.Info("starting leader election support")
+
 	if l.cm == nil {
-		return errors.New("cm is nill")
+		return errors.New("no instance of CatMan provided")
 	}
 
 	if l.hostName == "" {
-		return errors.New("hostname is empty")
+		return errors.New("no hostname provided")
 	}
 
-	defer func() {
-		if err != nil {
-			l.becomeFailed(err)
-		}
-	}()
+	if err := l.makeOffer(); err != nil {
+		l.becomeFailed(err)
+		return err
+	}
 
-	err = l.makeOffer()
-	if err != nil {
-		return
+	if err := l.determineElectionStatus(); err != nil {
+		l.becomeFailed(err)
+		return err
 	}
-	err = l.determineElectionStatus()
-	if err != nil {
-		return
-	}
+
 	return nil
 }
 
-func (l *LeaderElectionSupport) Stop() (err error) {
+// stops all election services, revokes any outstanding leader offers, and
+// disconnects from ZooKeeper.
+func (l *LeaderElectionSupport) Stop() error {
 	l.l.Lock()
 	defer l.l.Unlock()
+
 	l.state = ElectionStateStop
 	l.dispatchEvent(ElectionEventStopStart)
 
+	l.log.Info("stopping leader election support")
+
 	if l.leaderOffer != nil {
-		err = l.cm.Delete(l.leaderOffer.NodePath(), -1)
-		defer func() {
-			if err != nil {
-				l.becomeFailed(err)
-			}
-		}()
-		if err != nil {
-			return
+		if err := l.cm.Delete(l.leaderOffer.NodePath(), -1); err != nil {
+			l.becomeFailed(err)
+			return err
 		}
+		l.log.Infof("removed leader offer %s", l.leaderOffer.NodePath())
 	}
 
 	l.dispatchEvent(ElectionEventStopComplete)
