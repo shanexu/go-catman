@@ -95,9 +95,10 @@ func (l *LeaderElectionSupport) makeOffer() error {
 
 	newLeaderOffer := &LeaderOffer{}
 	newLeaderOffer.SetHostName(l.hostName)
+	hostnameBytes := []byte(l.hostName)
 	nodePath, err := l.cm.Create(
 		l.rootNodeName+"/"+"n_",
-		[]byte(l.hostName),
+		hostnameBytes,
 		zk.FlagEphemeral|zk.FlagSequence,
 		OpenAclUnsafe,
 	)
@@ -106,6 +107,8 @@ func (l *LeaderElectionSupport) makeOffer() error {
 	}
 	newLeaderOffer.SetNodePath(nodePath)
 	l.leaderOffer = newLeaderOffer
+
+	l.log.Debugf("created leader offer %+v", l.leaderOffer)
 
 	l.dispatchEvent(ElectionEventOfferComplete)
 
@@ -129,11 +132,11 @@ func (l *LeaderElectionSupport) determineElectionStatus() error {
 	}
 	currentLeaderOffer.SetId(int(id))
 
-	cs, err := l.cm.CMChildren(l.rootNodeName, nil)
+	children, err := l.cm.CMChildren(l.rootNodeName, nil)
 	if err != nil {
 		return err
 	}
-	leaderOffers, err := l.toLeaderOffers(cs)
+	leaderOffers, err := l.toLeaderOffers(children)
 	if err != nil {
 		return err
 	}
@@ -141,6 +144,8 @@ func (l *LeaderElectionSupport) determineElectionStatus() error {
 	for i := range leaderOffers {
 		leaderOffer := leaderOffers[i]
 		if leaderOffer.Id() == currentLeaderOffer.Id() {
+			l.log.Debugf("there are %d leader offers. I am %d in line.", len(leaderOffers), i)
+
 			l.dispatchEvent(ElectionEventDetermineComplete)
 
 			if i == 0 {
@@ -156,17 +161,23 @@ func (l *LeaderElectionSupport) determineElectionStatus() error {
 }
 
 func (l *LeaderElectionSupport) becomeReady(neighborLeaderOffer *LeaderOffer) error {
-	ok, _, events, err := l.cm.ExistsW(neighborLeaderOffer.NodePath())
-	if err != nil {
-		return err
-	}
-	if ok {
-		event := <-events
-		l.Process(event)
+	l.log.Infof(
+		"%s not elected leader. Watching node:%s",
+		l.leaderOffer.NodePath(),
+		neighborLeaderOffer.NodePath())
+
+	stat, _ := l.cm.CMExists(neighborLeaderOffer.NodePath(), l)
+
+	if stat != nil {
 		l.dispatchEvent(ElectionEventReadyStart)
+		l.log.Debugf(
+			"we're behind %s in line and they're alive. Keeping an eye on them",
+			neighborLeaderOffer.NodePath())
 		l.state = ElectionStateReady
-		l.dispatchEvent(ElectionEventReadyComplete)
 	} else {
+		l.log.Infof(
+			"we're behind %s in line and they're alive. Keeping an eye on them",
+			neighborLeaderOffer.NodePath())
 		l.determineElectionStatus()
 	}
 	return nil
@@ -175,13 +186,19 @@ func (l *LeaderElectionSupport) becomeReady(neighborLeaderOffer *LeaderOffer) er
 func (l *LeaderElectionSupport) becomeLeader() error {
 	l.state = ElectionStateElected
 	l.dispatchEvent(ElectionEventElectedStart)
+
+	l.log.Infof("Becoming leader with node: %s", l.LeaderOffer().NodePath())
+
 	l.dispatchEvent(ElectionEventElectedComplete)
 	return nil
 }
 
 func (l *LeaderElectionSupport) becomeFailed(err error) error {
+	l.log.Infof("failed in state %s - Exception: %s", l.state, err)
+
 	l.state = ElectionStateFailed
 	l.dispatchEvent(ElectionEventFailed)
+
 	return nil
 }
 
@@ -204,15 +221,15 @@ func (l *LeaderElectionSupport) toLeaderOffers(strings []string) ([]*LeaderOffer
 	var leaderOffers []*LeaderOffer
 
 	for _, offer := range strings {
-		data, _, err := l.cm.Get(l.rootNodeName + "/" + offer)
-		if err != nil {
-			return nil, err
-		}
-		id, err := strconv.ParseInt(offer[len("n_"):], 10, 64)
+		data, err := l.cm.CMGet(l.rootNodeName + "/" + offer)
 		if err != nil {
 			return nil, err
 		}
 		hostName := string(data)
+		id, err := strconv.ParseInt(offer[len("n_"):], 10, 64)
+		if err != nil {
+			return nil, err
+		}
 		leaderOffers = append(leaderOffers, NewLeaderOffer(int(id), l.rootNodeName+"/"+offer, hostName))
 	}
 	sort.SliceStable(leaderOffers, func(i int, j int) bool {
@@ -221,16 +238,19 @@ func (l *LeaderElectionSupport) toLeaderOffers(strings []string) ([]*LeaderOffer
 	return leaderOffers, nil
 }
 
-func (l *LeaderElectionSupport) Process(event zk.Event) error {
+func (l *LeaderElectionSupport) Process(event zk.Event) {
 	if event.Type == zk.EventNodeDeleted {
 		if event.Path != l.leaderOffer.NodePath() && l.state != ElectionStateStop {
-			err := l.determineElectionStatus()
-			if err != nil {
+			l.log.Debugf(
+				"node %s deleted. need to run through the election process.",
+				event.Path)
+			l.l.Lock()
+			defer l.l.Unlock()
+			if err := l.determineElectionStatus(); err != nil {
 				l.becomeFailed(err)
 			}
 		}
 	}
-	return nil
 }
 
 func (l *LeaderElectionSupport) dispatchEvent(event ElectionEvent) {
