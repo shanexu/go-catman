@@ -7,3 +7,11 @@ package catman
 type LeaderElectionAware interface {
 	OnElectionEvent(event ElectionEvent)
 }
+
+var _ LeaderElectionAware = LeaderElectionAwareFunc(nil)
+
+type LeaderElectionAwareFunc func(event ElectionEvent)
+
+func (l LeaderElectionAwareFunc) OnElectionEvent(event ElectionEvent) {
+	l(event)
+}
